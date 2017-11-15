@@ -1,0 +1,29 @@
+{
+  "name": "TRex",
+  "description": "Torrent Rex",
+  "version": "2.2.0",
+  "engines": {
+    "node": ">= 0.6.0",
+    "npm": ">= 1.0.0"
+  },
+  "dependencies": {
+    "async": "^2.6.0",
+    "atob": "^2.0.3",
+    "body-parser": "^1.18.2",
+    "btoa": "^1.1.2",
+    "cheerio": "^1.0.0-rc.2",
+    "compression": "^1.7.1",
+    "express": "^4.16.2",
+    "md5": "^2.2.1",
+    "mongoose": "^4.13.2",
+    "morgan": "^1.9.0",
+    "q": "^1.5.1",
+    "request": "^2.83.0"
+  },
+  "bundleDependencies": [],
+  "private": true,
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  }
+}
