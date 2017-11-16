@@ -7,18 +7,14 @@
  * - La url de la serie será la del capítulo que guarde, da igual. Debería ser igual para todos (newpct).
  *
  */
-var newpctUtils = require('../utils/newpct.js'),
+var newpctUtils = require('./newpct.js'),
     request = require('request'),
     cheerio = require('cheerio'),
     http = require('http'),
     md5 = require('md5'),
     async = require('async'),
     atob = require('atob'),
-    btoa = require('btoa'),
-    events = require('events');
-
-// debug
-var DEBUG_MODE = true;
+    btoa = require('btoa');
 
 var urls = {
     'N': 'http://www.newpct.com/'
@@ -29,44 +25,19 @@ var urls = {
     'N': 'http://www.newpct.com/buscar-descargas/'
 };
 
-var eventEmitter = new events.EventEmitter();
 
 /*
  http://trex-lovehinaesp.rhcloud.com/api/trex/series/vikingos
  */
 
 
-module.exports = function (app, models) {
-
-    /*************************************************************************/
-    /********************* LISTENER EVENTOS GENERALES ************************/
-    /*************************************************************************/
-
-    //Envío una respuesta JSON
-    eventEmitter.on('sendResponse', function (responseObject, responseJSON) {
-        log("Envio respuesta");
-        responseObject.set({
-            'Content-Type': 'application/json; charset=utf-8'
-        }).json(responseJSON);
-    });
-
-    //Envío un torrent como respuesta
-    eventEmitter.on('sendTorrent', function (responseObject, disposition, content, responseTorrent) {
-        responseObject.set({
-            'Content-Type': content,
-            'Content-Disposition': disposition
-        });
-
-        responseObject.write(responseTorrent);
-        responseObject.end();
-    });
-
-
-    /*************************************************************************/
-    /*************** MÉTODOS DEL WEBSERVICE **********************************/
-    /*************************************************************************/
-
-    //GET - Recoge y devuelve todos los torrents de esta serie identificada por su ID
+/*************************************************************************/
+/*************** MÉTODOS DEL WEBSERVICE **********************************/
+/*************************************************************************/
+module.exports = function (models, log) {
+    /**
+     * GET - Recoge y devuelve todos los torrents de esta serie identificada por su ID
+     */
     var getSerieById = function (req, res) {
         var idSerie = req.params.idSerie,
             response = {};
@@ -108,7 +79,9 @@ module.exports = function (app, models) {
         });
     };
 
-    //GET - Añade una serie via introducir la url
+    /**
+     * GET - Añade una serie via introducir la url
+     */
     var addSerie = function (req, res) {
         var source = req.params.source,
             serie = req.params.serie,
@@ -182,7 +155,9 @@ module.exports = function (app, models) {
             });
     };
 
-    //Descargo un torrent de una serie y lo envío al plugin
+    /**
+     * GET - Descargo un torrent de una serie y lo envío al plugin
+     */
     var getTorrent = function (req, res) {
         var idChapterToDownload = req.params.idChapter,
             idSerie = req.params.idSerie,
@@ -270,7 +245,7 @@ module.exports = function (app, models) {
     };
 
     /**
-     * Busco un torrent
+     * GET -Busco un torrent
      */
     var searchTorrent = function (req, res) {
         var texto = atob(req.params.text), response = {}, torrentList = [];
@@ -311,6 +286,9 @@ module.exports = function (app, models) {
         });
     };
 
+    /**
+     * GET - Descarga un torrent directo
+     */
     var getDirectTorrent = function (req, res) {
         var url = atob(req.params.urlTorrent), response = {};
 
@@ -335,19 +313,6 @@ module.exports = function (app, models) {
         });
     };
 
-    //Las rutas
-    app.get('/api/trex/serie/:idSerie', getSerieById);   //Lista de temporadas y capítulos de una serie. Quality: low,high
-    app.get('/api/trex/download/:idSerie/:idChapter', getTorrent);   //Descarga de series de T y N
-    app.get('/api/trex/addSerie/:source/:serie/:name', addSerie); //Añade serie por url. Source: N - N1. Serie: url. Name: nombre
-
-    app.get('/api/trex/search/:text', searchTorrent); //Busca torrents
-    app.get('/api/trex/downloadTorrent/:urlTorrent', getDirectTorrent); //Descarga de torrents buscados
-
-    // Check status
-    app.get('/pagecount', function (req, res) {
-        res.send('ok');
-    });
-
 
     //-----------------------------------------------------------------------------------------------
     //-----------------------------------------------------------------------------------------------
@@ -355,7 +320,7 @@ module.exports = function (app, models) {
     //-----------------------------------------------------------------------------------------------
     //-----------------------------------------------------------------------------------------------
 
-    var updateSerie = function updateSerie(idSerie, callback) {
+    function updateSerie(idSerie, callback) {
         //Miro a ver si tengo la serie en mongo
         models.Serie.findOne({"_id": idSerie})
             .exec(function (err, serie) {
@@ -369,7 +334,7 @@ module.exports = function (app, models) {
                     updateSerieContinue(serie, callback);
                 }
             });
-    };
+    }
 
     function updateSerieContinue(content, callback) {
         var temporadasResponse = {}, $url = '',
@@ -601,7 +566,7 @@ module.exports = function (app, models) {
         });
     }
 
-    var downloadTorrent = function downloadTorrent(res, idTorrent, titleTorrent, source) {
+    function downloadTorrent(res, idTorrent, titleTorrent, source) {
         var $url = urlsTorrentDownload[source] + idTorrent;
 
         log("Descargo torrent: " + $url);
@@ -638,131 +603,125 @@ module.exports = function (app, models) {
             }
         });
 
-    };
-};
-
-function generateTorrentsData(temporadas, source) {
-    var resp = {}, $lastSeason = 0, $numSeasons = 0;
-
-    resp.seasonsDetail = {};
-
-    log("Da temps");
-    log(temporadas);
-
-    for (var index in temporadas) {
-        if (temporadas.hasOwnProperty(index) && temporadas[index]) {
-            var temp = temporadas[index];
-
-            var $lastChapter = 0;
-            temp.forEach(function (chapter) {
-                var currentChap = parseInt(chapter.chapter, 10);
-                if ($lastChapter < currentChap) {
-                    $lastChapter = currentChap;
-                }
-            });
-
-            resp.seasonsDetail[index] = {
-                chapters: temp.length,
-                lastChapter: $lastChapter
-            };
-
-            if ($lastSeason < index) {
-                $lastSeason = index;
-            }
-
-            $numSeasons++;
-        }
     }
 
-    resp.seasons = $numSeasons;
-    resp.lastSeason = $lastSeason;
-    resp.source = source;
-    return resp;
-}
+    function generateTorrentsData(temporadas, source) {
+        var resp = {}, $lastSeason = 0, $numSeasons = 0;
+
+        resp.seasonsDetail = {};
+
+        log("Da temps");
+        log(temporadas);
+
+        for (var index in temporadas) {
+            if (temporadas.hasOwnProperty(index) && temporadas[index]) {
+                var temp = temporadas[index];
+
+                var $lastChapter = 0;
+                temp.forEach(function (chapter) {
+                    var currentChap = parseInt(chapter.chapter, 10);
+                    if ($lastChapter < currentChap) {
+                        $lastChapter = currentChap;
+                    }
+                });
+
+                resp.seasonsDetail[index] = {
+                    chapters: temp.length,
+                    lastChapter: $lastChapter
+                };
+
+                if ($lastSeason < index) {
+                    $lastSeason = index;
+                }
+
+                $numSeasons++;
+            }
+        }
+
+        resp.seasons = $numSeasons;
+        resp.lastSeason = $lastSeason;
+        resp.source = source;
+        return resp;
+    }
 
 
-/**
- * Intento sacar el nombre de la serie
- * http://www.newpct.com/descargar-serie/gotham/capitulo-211/ -- aHR0cDovL3d3dy5uZXdwY3QuY29tL2Rlc2Nhcmdhci1zZXJpZS9nb3RoYW0vY2FwaXR1bG8tMjExLw==
- * http://www.newpct.com/descargar-seriehd/gotham/capitulo-211/
- * http://www.newpct.com/descargar-serievo/supergirl/capitulo-113/
- * http://www.newpct.com/todos-los-capitulos/series/gotham/
- */
-function extractSerieName(url) {
-    var name = '';
-    //Compruebo la fuente
-    if (url.indexOf(urls['N']) !== -1) {
-        // Es newpct
-        var patron = /(http:\/\/www.newpct.com\/)(descargar-serie(hd|vo)?|todos-los-capitulos\/series)\/([A-Za-z0-9-]+)/g;
-        var trozos = patron.exec(url); // el 4 es el nombre
+    /**
+     * Intento sacar el nombre de la serie
+     * http://www.newpct.com/descargar-serie/gotham/capitulo-211/ -- aHR0cDovL3d3dy5uZXdwY3QuY29tL2Rlc2Nhcmdhci1zZXJpZS9nb3RoYW0vY2FwaXR1bG8tMjExLw==
+     * http://www.newpct.com/descargar-seriehd/gotham/capitulo-211/
+     * http://www.newpct.com/descargar-serievo/supergirl/capitulo-113/
+     * http://www.newpct.com/todos-los-capitulos/series/gotham/
+     */
+    function extractSerieName(url) {
+        var name = '';
+        //Compruebo la fuente
+        if (url.indexOf(urls['N']) !== -1) {
+            // Es newpct
+            var patron = /(http:\/\/www.newpct.com\/)(descargar-serie(hd|vo)?|todos-los-capitulos\/series)\/([A-Za-z0-9-]+)/g;
+            var trozos = patron.exec(url); // el 4 es el nombre
 
-        if (trozos.length === 5) {
-            name = trozos[4];
+            if (trozos.length === 5) {
+                name = trozos[4];
+            } else {
+                name = url;
+            }
         } else {
             name = url;
         }
-    } else {
-        name = url;
+
+        return name;
     }
 
-    return name;
-}
-
-function capitalize(name) {
-    name = normalizeName(name);
-    return name.charAt(0).toUpperCase() + name.slice(1);
-}
-
-function normalizeName(name) {
-    return name.toLowerCase().replace(/-(.)/g, function (match, group1) {
-        return ' ' + group1.toUpperCase();
-    });
-}
-
-function sanitize(text, extra) {
-    if (!text) {
-        return null;
+    function capitalize(name) {
+        name = normalizeName(name);
+        return name.charAt(0).toUpperCase() + name.slice(1);
     }
 
-    //Dejo sólo alfanuméricos
-    if (extra) {
-        text = text.replace(/[^a-zA-ZñáéíóúüÁÉÍÓÚÜ0-9\[\] \.\-_\+\(\)]/g, "");
-    } else {
-        text = text.replace(/[^a-zA-ZñáéíóúüÁÉÍÓÚÜ0-9 ]/g, "");
+    function normalizeName(name) {
+        return name.toLowerCase().replace(/-(.)/g, function (match, group1) {
+            return ' ' + group1.toUpperCase();
+        });
     }
-    text = text.replace('�', 'ñ');
 
-    text = text.replace('Espaol', 'Español');
-
-    return text.trim();
-}
-
-function quitaUrls(temporadas) {
-    for (var index in temporadas) {
-        if (temporadas.hasOwnProperty(index)) {
-            var temporada = temporadas[index];
-
-            temporada.forEach(function (capi) {
-                // Quito la url
-                capi.url = '';
-            });
-
-            temporadas[index] = temporada;
+    function sanitize(text, extra) {
+        if (!text) {
+            return null;
         }
+
+        //Dejo sólo alfanuméricos
+        if (extra) {
+            text = text.replace(/[^a-zA-ZñáéíóúüÁÉÍÓÚÜ0-9\[\] \.\-_\+\(\)]/g, "");
+        } else {
+            text = text.replace(/[^a-zA-ZñáéíóúüÁÉÍÓÚÜ0-9 ]/g, "");
+        }
+        text = text.replace('�', 'ñ');
+
+        text = text.replace('Espaol', 'Español');
+
+        return text.trim();
     }
-    return temporadas;
-}
 
-function dbTrexDisconnect() {
-    mongoose.disconnect();
-}
+    function quitaUrls(temporadas) {
+        for (var index in temporadas) {
+            if (temporadas.hasOwnProperty(index)) {
+                var temporada = temporadas[index];
 
-function log(text) {
-    if (DEBUG_MODE) {
-        console.log(text);
+                temporada.forEach(function (capi) {
+                    // Quito la url
+                    capi.url = '';
+                });
+
+                temporadas[index] = temporada;
+            }
+        }
+        return temporadas;
     }
-}
 
-process.on('exit', dbTrexDisconnect);
-process.on('SIGINT', dbTrexDisconnect);
-process.on('SIGTERM', dbTrexDisconnect);
+    return {
+        getSerieById: getSerieById,
+        getTorrent: getTorrent,
+        addSerie: addSerie,
+        searchTorrent: searchTorrent,
+        getDirectTorrent: getDirectTorrent
+    }
+};

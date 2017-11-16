@@ -27,8 +27,17 @@ var serieDetailSchema = new Schema({
 
 var serieSubscription = new Schema({
     _id: String,
-    name: String
+    serie_id: String,
+    title: String,
+    source: String,
+    category: String,
+    language: String,
+    lastSeason: String,
+    lastChapter: String,
+    excluded: {},
+    active: Boolean
 });
+
 
 module.exports = {
     serieDetailSchema: serieDetailSchema,

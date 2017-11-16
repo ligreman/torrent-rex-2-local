@@ -9,11 +9,14 @@ var express = require('express'),
     http = require('http'),
     morgan = require('morgan'),
     mongoose = require('mongoose'),
-    modelos = require('./models/trex-models.js'),
     server = http.createServer(app),
-    spawn = require('child_process').spawn;
+    spawn = require('child_process').spawn,
+    events = require('events');
 
-// Proceso para arrancar y gestionar Mongo
+
+/******************************************************************/
+/******************** MONGODB *************************************/
+/******************************************************************/
 var pipe = spawn('mongod', ['--config', 'C:\\Programas\\MongoDB3\\mongo.conf']);
 
 pipe.stdout.on('data', function (data) {
@@ -28,7 +31,31 @@ pipe.on('close', function (code) {
     console.log('Mongo process exited with code: ' + code);
 });
 
-// Servidor API
+//Inicio conexión de mongo
+var mongoURL = 'mongodb://localhost/trex';
+
+log('Conectando a base de datos');
+log(mongoURL);
+
+var dbTrex = mongoose.createConnection(mongoURL, {db: {safe: true}});
+
+//Modo debug
+dbTrex.on('error', console.error.bind(console, 'Error conectando a MongoDB:'));
+dbTrex.on("connected", console.info.bind(console, 'Conectado a MongoDB: Trex'));
+
+//Modelos
+var modelDB = require('./models/model.js');
+var models = {
+    Serie: dbTrex.model('Serie', modelDB.serieDetailSchema),
+    Subscription: dbTrex.model('Subscription', modelDB.serieSubscription)
+    // SerieExtract: dbTrex.model('SerieExtract', modelDB.serieExtractSchema),
+    // SeriesN: dbTrex.model('SeriesN', modelDB.seriesNSchema)
+};
+
+
+/******************************************************************/
+/******************** API SERVER **********************************/
+/******************************************************************/
 var port = 8080, ip = 'localhost';
 
 // Configuramos la app para que pueda realizar métodos REST
@@ -53,30 +80,52 @@ app.use(function (req, res, next) {
 });
 
 
-//Inicio conexión de mongo
-var mongoURL = 'mongodb://localhost/trex';
+/******************************************************************/
+/******************** RUTAS API ***********************************/
+/******************************************************************/
+var torrent = require('./modules/torrent.js')(models, log);
+//Las rutas
+app.get('/api/trex/serie/:idSerie', torrent.getSerieById);   //Lista de temporadas y capítulos de una serie. Quality: low,high
+app.get('/api/trex/download/:idSerie/:idChapter', torrent.getTorrent);   //Descarga de series de T y N
+app.get('/api/trex/addSerie/:source/:serie/:name', torrent.addSerie); //Añade serie por url. Source: N - N1. Serie: url. Name: nombre
 
-log('Conectando a base de datos');
-log(mongoURL);
+app.get('/api/trex/search/:text', torrent.searchTorrent); //Busca torrents
+app.get('/api/trex/downloadTorrent/:urlTorrent', torrent.getDirectTorrent); //Descarga de torrents buscados
 
-var dbTrex = mongoose.createConnection(mongoURL, {db: {safe: true}});
-
-//Modo debug
-dbTrex.on('error', console.error.bind(console, 'Error conectando a MongoDB:'));
-dbTrex.on("connected", console.info.bind(console, 'Conectado a MongoDB: Trex'));
-
-//Modelos
-var models = {
-    Serie: dbTrex.model('Serie', modelos.serieDetailSchema),
-    Subscription: dbTrex.model('Subscription', modelos.serieSubscription)
-    // SerieExtract: dbTrex.model('SerieExtract', modelos.serieExtractSchema),
-    // SeriesN: dbTrex.model('SeriesN', modelos.seriesNSchema)
-};
-
-//Cargo rutas
-require('./routes/trex')(app, models);
+// Check status
+app.get('/pagecount', function (req, res) {
+    res.send('ok');
+});
 
 
+/*************************************************************************/
+/********************* LISTENER EVENTOS GENERALES ************************/
+/*************************************************************************/
+var eventEmitter = new events.EventEmitter();
+
+//Envío una respuesta JSON
+eventEmitter.on('sendResponse', function (responseObject, responseJSON) {
+    log("Envio respuesta");
+    responseObject.set({
+        'Content-Type': 'application/json; charset=utf-8'
+    }).json(responseJSON);
+});
+
+//Envío un torrent como respuesta
+eventEmitter.on('sendTorrent', function (responseObject, disposition, content, responseTorrent) {
+    responseObject.set({
+        'Content-Type': content,
+        'Content-Disposition': disposition
+    });
+
+    responseObject.write(responseTorrent);
+    responseObject.end();
+});
+
+
+/******************************************************************/
+/************ ERRORES Y PROCESOS AUTOMÁTICOS **********************/
+/******************************************************************/
 // Si no se "queda" en una de las rutas anteriores, devuelvo un 404 siempre
 app.use(function (req, res) {
     res.send(404);
@@ -88,7 +137,7 @@ server.listen(port, ip, function () {
 });
 
 // Lanzo los procesos de sincronización y chequeo de novedades
-var syncUtils = require('./utils/sync');
+/*var syncUtils = require('./modules/sync');
 setTimeout(function () {
     syncUtils.checkSeries(models)
         .then(
@@ -98,6 +147,29 @@ setTimeout(function () {
                 // All of the promises were rejected.
             }
         );
+}, 5000);*/
+
+setTimeout(function (args) {
+    models.Subscription.find({})
+        .exec(function (err, subscriptions) {
+            if (err) {
+                console.error("Error rescatando suscripciones de Mongo");
+                console.error(err);
+                throw err;
+            } else {
+                // Por cada una, actualizo de la fuente
+                subscriptions.forEach(function (subscription) {
+                    request(apiUrl + 'serie/' + subscription.serie_id, function (err, resp, body) {
+                        if (err) {
+                            log('Error autocall pagecount');
+                        }
+
+                        // var $ = cheerio.load(body);
+                        log(body);
+                    });
+                });
+            }
+        });
 }, 5000);
 
 //Si salta alguna excepción rara, saco error en vez de cerrar la aplicación
@@ -119,6 +191,7 @@ process.on('SIGTERM', exitHandler.bind(null, {exit: true}));
 
 function exitHandler(options, err) {
     if (options.exit) {
+        dbTrexDisconnect();
         killMongo(pipe);
         process.exit();
     }
@@ -126,6 +199,10 @@ function exitHandler(options, err) {
 
 function killMongo(pipe) {
     pipe.kill('SIGINT');
+}
+
+function dbTrexDisconnect() {
+    mongoose.disconnect();
 }
 
 function log(text) {
