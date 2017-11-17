@@ -7,8 +7,8 @@
  * - La url de la serie será la del capítulo que guarde, da igual. Debería ser igual para todos (newpct).
  *
  */
-var newpctUtils = require('./newpct.js'),
-    request = require('request'),
+    // var newpctUtils = require('./newpct.js'),
+var request = require('request'),
     cheerio = require('cheerio'),
     http = require('http'),
     md5 = require('md5'),
@@ -37,9 +37,12 @@ var urls = {
 module.exports = function (models, log) {
     /**
      * GET - Recoge y devuelve todos los torrents de esta serie identificada por su ID
+     * @param syncSerieId: si llamo a la función en modo sync y no API, no tengo que responder
+     * la petición HTTP sino llamar al callback
+     * @param callback:callback si es modo sync
      */
-    var getSerieById = function (req, res) {
-        var idSerie = req.params.idSerie,
+    var getSerieById = function (req, res, syncSerieId, callback) {
+        var idSerie = req.params.idSerie || syncSerieId,
             response = {};
 
         log("Voy a buscar la serie " + idSerie);
@@ -48,20 +51,23 @@ module.exports = function (models, log) {
             log("TERMINO UPDATE");
             log(tempData);
             if (error !== null || tempData === null || tempData === undefined) {
-                response = {torrents: null, error: "Se produjo un error"};
-                res.send(response);
-                throw "Error: 500 - Error al hacer el update";
+                if (syncSerieId) {
+                    return null;
+                } else {
+                    response = {torrents: null, error: "Se produjo un error"};
+                    res.send(response);
+                    throw "Error: 500 - Error al hacer el update";
+                }
             }
 
             log("TEMPDATA");
             log(tempData);
-            var nombrecito = tempData.name;
-            if (!nombrecito) {
-                nombrecito = tempData.titleSmall;
-            }
+            // var nombrecito = tempData.name;
+            // if (!nombrecito) {
+            //     nombrecito = tempData.titleSmall;
+            // }
 
             //Quito duplicados según calidad o capitulos que no son de esta serie
-            //var finalTemporadas = removeExtrangeAndDuplicatedChapters(tempData.temporadas, tempData.name, quality);
             var finalTemporadas = tempData.temporadas;
 
             response = {
@@ -75,7 +81,11 @@ module.exports = function (models, log) {
             log(response);
 
             //Respuesta
-            eventEmitter.emit('sendResponse', res, response);
+            if (syncSerieId) {
+                callback(response);
+            } else {
+                eventEmitter.emit('sendResponse', res, response);
+            }
         });
     };
 
@@ -336,35 +346,35 @@ module.exports = function (models, log) {
             });
     }
 
-    function updateSerieContinue(content, callback) {
+    function updateSerieContinue(serie, callback) {
         var temporadasResponse = {}, $url = '',
             date = new Date(), currentTime = date.getTime(), jsonTime;
 
         //Si el lastUpdate no han pasado 24 horas no actualizo y devuelvo el contenido del json este
-        if (content.lastUpdate !== undefined) {
+        if (serie.lastUpdate !== undefined) {
             log("Se ha actualizado antes alguna vez la serie");
-            jsonTime = parseInt(content.lastUpdate, 10);
+            jsonTime = parseInt(serie.lastUpdate, 10);
         } else {
             log("Nunca se había actualizado la serie");
             jsonTime = 0;
         }
 
         log("El contenido");
-        log(content);
+        log(serie);
 
         //Si está actualizado y ya tengo los datos devuelvo lo del json
-        if (content.seasons !== undefined && Object.keys(content.seasons).length && (currentTime < (jsonTime + 24 * 60 * 60 * 1000))) {
+        if (serie.seasons !== undefined && Object.keys(serie.seasons).length && (currentTime < (jsonTime + 24 * 60 * 60 * 1000))) {
             log('No hace falta actualizar');
             callback(null, {
-                temporadas: content.seasons,
-                name: content.name,
-                source: content.source
+                temporadas: serie.seasons,
+                name: serie.name,
+                source: serie.source
             });
             return null;
         }
 
         //Tengo que actualizar los datos
-        $url = content.url;
+        $url = serie.url;
         log($url);
         //api/trex/torrents/dG9ycmVudHMucGhwP3Byb2Nlc2FyPTEmY2F0ZWdvcmlhcz0nU2VyaWVzJyZzdWJjYXRlZ29yaWE9MTg2NA==/T
         //api/trex/torrents/torrents.php?procesar=1&categorias='Series'&subcategoria=1864/T
@@ -381,7 +391,7 @@ module.exports = function (models, log) {
 
             //Cojo la lista torrents dependiendo de la fuente.
             //NewPCT1
-            if (content.source === 'N1') {
+            /*if (serie.source === 'N1') {
                 //Saco el número de páginas que hay para poder procesarlas
                 numpags = $('ul.pagination li').length;
                 category = 'Serie';
@@ -439,15 +449,15 @@ module.exports = function (models, log) {
                     var contentUpdated = {
                         //_id: content._id,
                         //id: content.id,
-                        source: content.source,
-                        name: content.name,
-                        url: content.url,
+                        source: serie.source,
+                        name: serie.name,
+                        url: serie.url,
                         seasons: temporadasResponse,
                         lastUpdate: date.getTime()
                     };
 
                     //Guardo en Mongo
-                    models.Serie.update({"_id": content._id}, contentUpdated, function (err) {
+                    models.Serie.update({"_id": serie._id}, contentUpdated, function (err) {
                         if (err) {
                             log("Error actualizando la serie N1 en mongo: " + err);
                             callback(err);
@@ -460,10 +470,10 @@ module.exports = function (models, log) {
                         }
                     });
                 });
-            }
+            }*/
             //�
             //NewPCT
-            if (content.source === 'N') {
+            if (serie.source === 'N') {
                 log("Página de newp original");
 
                 var patron = /(.*) - (Temp\.|Temporada )([0-9]+) \[([A-Za-z 0-9]+)]\[([a-zA-Z \.0-9]+)](.+)/;
@@ -541,16 +551,16 @@ module.exports = function (models, log) {
                 var contentUpdated = {
                     //_id: content._id,
                     //id: content.id,
-                    source: content.source,
-                    name: content.name,
-                    url: content.url,
+                    source: serie.source,
+                    name: serie.name,
+                    url: serie.url,
                     seasons: temporadasResponse,
                     lastUpdate: date.getTime()
                 };
 
                 //Guardo en Mongo
                 Serie
-                    .update({"_id": content._id}, contentUpdated, function (err) {
+                    .update({"_id": serie._id}, contentUpdated, function (err) {
                         if (err) {
                             log("Error actualizando la serie N en mongo: " + err);
                             callback(err);

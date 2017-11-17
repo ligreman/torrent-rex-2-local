@@ -38,10 +38,17 @@ var serieSubscription = new Schema({
     active: Boolean
 });
 
+var serieDownload = new Schema({
+    torrentId: String,
+    serieId: String,
+    title: String,
+    retry: Number
+});
 
 module.exports = {
     serieDetailSchema: serieDetailSchema,
     serieExtractSchema: serieExtractSchema,
     seriesNSchema: seriesNSchema,
-    serieSubscription: serieSubscription
+    serieSubscription: serieSubscription,
+    serieDownload: serieDownload
 };

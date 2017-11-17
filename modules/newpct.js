@@ -30,7 +30,7 @@ var extractNewcptChapters = function extractNewcptChapters(pagina, callback) {
                 });
             }
         });
-//(Serie )(.*)( - )(Temporada (.*))( - )(Temporada\[( )*([0-9]+)( )*\])(Capitulo\[( )*([0-9]+)( )*\])(.*)(\[( )*([A-Z]+)( )*\])(.*)( [0-9\.]+ (MB|GB))
+        //(Serie )(.*)( - )(Temporada (.*))( - )(Temporada\[( )*([0-9]+)( )*\])(Capitulo\[( )*([0-9]+)( )*\])(.*)(\[( )*([A-Z]+)( )*\])(.*)( [0-9\.]+ (MB|GB))
         //Termino
         callback(null, capis);
     });
@@ -89,7 +89,7 @@ var parseTorrentsNewpct = function parseTorrentsNewpct(torrentList, urlBase, md5
 //(.*)( [0-9\.]+ (MB|GB))
 
 var extractNewpctMetadata = function extractNewpctMetadata(txt) {
-//Serie American Horror Story - Temporada 4  - Temporada[ 4 ]Capitulo[ 13 ]Español Castellano Calidad [ HDTV ]       16-02-2015       500 MB
+    //Serie American Horror Story - Temporada 4  - Temporada[ 4 ]Capitulo[ 13 ]Español Castellano Calidad [ HDTV ]       16-02-2015       500 MB
     var patt, res, response = {
         title: null, season: null, chapter: null,
         language: null, format: null, size: null
@@ -210,7 +210,7 @@ var generateNewpctSeriePage = function generateNewpctSeriePage(url, baseUrl) {
     var patt = /(.*\/(series|series-hd|series-vo)\/)(.*)(\/.*)/;
     var res = patt.exec(url);
 
-//["http://www.newpct1.com/series-hd/american-horror-story/", "http://www.newpct1.com/series-hd/", "series-hd", "american-horror-story", "/"]
+    //["http://www.newpct1.com/series-hd/american-horror-story/", "http://www.newpct1.com/series-hd/", "series-hd", "american-horror-story", "/"]
 
     if (res !== null) {
         return baseUrl + 'index.php?page=' + res[2].trim() + '&url=' + res[3].trim() + '/&letter=&pg=';

@@ -13,6 +13,12 @@ var express = require('express'),
     spawn = require('child_process').spawn,
     events = require('events');
 
+// Modo de ejecución
+var args = process.argv.slice(2);
+var syncMode = false;
+if (args[0] === 'sync') {
+    syncMode = true;
+}
 
 /******************************************************************/
 /******************** MONGODB *************************************/
@@ -47,7 +53,8 @@ dbTrex.on("connected", console.info.bind(console, 'Conectado a MongoDB: Trex'));
 var modelDB = require('./models/model.js');
 var models = {
     Serie: dbTrex.model('Serie', modelDB.serieDetailSchema),
-    Subscription: dbTrex.model('Subscription', modelDB.serieSubscription)
+    Subscription: dbTrex.model('Subscription', modelDB.serieSubscription),
+    Downloads: dbTrex.model('Subscription', modelDB.serieDownload)
     // SerieExtract: dbTrex.model('SerieExtract', modelDB.serieExtractSchema),
     // SeriesN: dbTrex.model('SeriesN', modelDB.seriesNSchema)
 };
@@ -149,28 +156,97 @@ setTimeout(function () {
         );
 }, 5000);*/
 
-setTimeout(function (args) {
-    models.Subscription.find({})
-        .exec(function (err, subscriptions) {
-            if (err) {
-                console.error("Error rescatando suscripciones de Mongo");
-                console.error(err);
-                throw err;
-            } else {
-                // Por cada una, actualizo de la fuente
-                subscriptions.forEach(function (subscription) {
-                    request(apiUrl + 'serie/' + subscription.serie_id, function (err, resp, body) {
-                        if (err) {
-                            log('Error autocall pagecount');
-                        }
+if (syncMode) {
+    setTimeout(function () {
 
-                        // var $ = cheerio.load(body);
-                        log(body);
+        // Saco las suscripciones
+        models.Subscription.find({})
+            .exec(function (err, subscriptions) {
+                if (err) {
+                    console.error("Error rescatando suscripciones de Mongo");
+                    console.error(err);
+                    throw err;
+                } else {
+                    // Por cada una, actualizo de la fuente
+                    subscriptions.forEach(function (subscription) {
+                        torrent.getSerieById(null, null, subscription.serie_id, checkNewChapters);
                     });
-                });
+                }
+            });
+    }, 5000);
+}
+
+
+function checkNewChapters(temporadas) {
+    // Torrents nuevos que tengo que descargar
+    var newTorrents = [];
+
+    if (temporadas !== null) {
+        // Si tengo las temporadas, comparo con la suscripción a ver si hay algo nuevo
+        var season, lastSeasonReal = subscription.lastSeason, lastChapterReal = subscription.lastChapter;
+
+        for (var seasonKey in temporadas.torrents) {
+            if (temporadas.torrents.hasOwnProperty(seasonKey)) {
+                season = temporadas.torrents[seasonKey];
+                seasonKey = parseInt(seasonKey);
+                var newSeason = false;
+
+                //Si la temporada es mayor que la antigua, cogeré todos sus capítulos
+                if (seasonKey > subscription.lastSeason) {
+                    newSeason = true;
+                    // Reseteo el último capi ya que hay temp nueva y tengo que pillar todo de ella.
+                    lastChapterReal = 0;
+                }
+
+                //Si están en la temporada última que he descargado o más avanzado sigo
+                if (seasonKey >= subscription.lastSeason) {
+
+                    //Recorro los capitulos de la sesión
+                    season.forEach(function (thisChapter) {
+                        // Si es capítulo más reciente de esta temporada, o es una temp nueva
+                        if ((thisChapter.chapter > subscription.lastChapter) || newSeason) {
+                            //Lo añado a la lista de descargas
+                            newTorrents.push({
+                                torrentId: thisChapter._id,
+                                title: thisChapter.title,
+                                serieId: subscription.serie_id,
+                                retry: 0
+                            });
+
+                            //Actualizo la variable de series
+                            lastChapterReal = Math.max(thisChapter.chapter, lastChapterReal);
+                        }
+                    });
+
+                    //Actualizo la variable de temporada
+                    lastSeasonReal = Math.max(seasonKey, lastSeasonReal);
+                }
             }
-        });
-}, 5000);
+        }
+
+        //Actualizo la temporda y capitulo últimos
+        subscription.lastChapter = lastChapterReal;
+        subscription.lastSeason = lastSeasonReal;
+
+        // Guardo esta suscripción actualizada
+        subscription.save();
+    } else {
+        console.error("Error al obtener las temporadas de la serie: " + subscription.title);
+    }
+
+    // Si hay nuevos torrents
+    if (newTorrents !== null && newTorrents.length > 1) {
+        for (var i = 0, j = newTorrents.length; i < j; i++) {
+            //Añado el torrent a la lista de descargas
+            models.Downloads.insertMany(newTorrents)
+                .then(function (mongooseDocuments) {
+                })
+                .catch(function (err) {
+                });
+        }
+    }
+}
+
 
 //Si salta alguna excepción rara, saco error en vez de cerrar la aplicación
 process.on('uncaughtException', function (err) {
